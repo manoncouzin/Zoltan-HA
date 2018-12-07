@@ -1,0 +1,219 @@
+###########################################################
+#                                                         #
+#                 Creating a good data                    #
+#                                                         #
+###########################################################
+#clear workspace :
+graphics.off()
+rm(list=ls(all=TRUE))
+
+#load packages
+
+library(psych) # for describe
+library(reshape2) # for melt function
+library(ggplot2) # for ggplot
+library(cAIC4) # for cAIC
+library(r2glmm) # for r2beta
+library(psych) # for describe
+library(ggplot2) # for ggplot
+library(cAIC4) # for cAIC
+library(r2glmm) # for r2beta
+library(lme4) # for lmer
+library(lmerTest) # to get singificance test in lmer
+library(psych) # for pairs.panels
+library(ggplot2) # for ggplot
+library(reshape2) # for melt function
+library(influence.ME) # for influence (this will also load the lme4 package)
+library(lattice) # for qqmath
+source("GraphPlots.R")
+
+#custom the function
+stdCoef.merMod <- function(object) {
+  sdy <- sd(getME(object, "y"))
+  sdx <- apply(getME(object, "X"), 2, sd)
+  sc <- fixef(object) * sdx/sdy
+  se.fixef <- coef(summary(object))[, "Std. Error"]
+  se <- se.fixef * sdx/sdy
+  return(data.frame(stdcoef = sc, stdse = se))
+}
+
+data_sample_3 = read.csv("https://raw.githubusercontent.com/kekecsz/PSYP13_Data_analysis_class-2018/master/home_sample_3.csv")
+
+# asign ID as factors
+data_sample_3$ID = factor(data_sample_3$ID)
+
+
+#descriptions
+describe(data_sample_3)
+summary(data_sample_3)
+
+# histograms
+hist(data_sample_3$pain1)
+hist(data_sample_3$pain2)
+hist(data_sample_3$pain3)
+hist(data_sample_3$pain4)
+hist(data_sample_3$age)
+hist(data_sample_3$STAI_trait)
+hist(data_sample_3$pain_cat)
+hist(data_sample_3$cortisol_serum)
+hist(data_sample_3$mindfulness)
+hist(data_sample_3$weight)
+#the data has been check, and there is no errors 
+###########################################################
+#                                                         #
+#                    Building a model                     #
+#                                                         #
+###########################################################
+
+#which variables are the repeated varibales
+repeated_variables = c("pain1", "pain2", "pain3", "pain4")
+
+#correlation of repeated variables
+cor(data_sample_3[, repeated_variables])
+
+#reshape dataframe
+data_sample_long = melt(data_sample_3, measure.vars = repeated_variables, variable.name = "time", value.name = "pain")
+
+# order data frame by participant ID(not necessary, just makes the dataframe look more intuitive)
+data_sample_long = data_sample_long[order(data_sample_long[, "ID"]),]
+
+# change the time variable to a numerical vector
+data_sample_long$time = as.numeric(data_sample_long$time)
+
+#building the linear and mixed model
+mod_pain_int = lmer(pain ~ age + sex + STAI_trait + pain_cat + mindfulness + cortisol_serum + time + (1 | ID), data = data_sample_long)
+mod_pain_slope = lmer(pain ~ age + sex + STAI_trait + pain_cat + mindfulness + cortisol_serum + time + (time | ID), data = data_sample_long)
+
+###########################################################
+#                                                         #
+#                    Comparing models                     #
+#                                                         #
+###########################################################
+
+data_sample_long_withpreds = data_sample_long
+data_sample_long_withpreds$pred_int = predict(mod_pain_int)
+data_sample_long_withpreds$pred_slope = predict(mod_pain_slope)
+
+# random intercept model
+ggplot(data_sample_long_withpreds, aes(y = pain, x = time, group = ID)) + geom_point(size = 3) + geom_line(color = "red", aes(y = pred_int, x = time)) + facet_wrap(~ID, ncol = 5)
+
+# random slope and intercept model
+ggplot(data_sample_long_withpreds, aes(y = pain, x = time, group = ID)) + geom_point(size = 3) + geom_line(color = "red", aes(y = pred_slope, x = time)) + facet_wrap(~ID, ncol = 5)
+
+#differents tests for comparisons 
+cAIC(mod_pain_int)$caic
+#210.8988
+cAIC(mod_pain_slope)$caic
+#210.8988
+anova(mod_pain_int, mod_pain_slope)
+
+summary(mod_pain_int)
+
+
+#adding a quadratic term of the time models 
+mod_pain_slope_quad = lmer(pain ~ age + sex + STAI_trait + pain_cat + mindfulness + cortisol_serum + time + I(time^2) + (time | ID), data = data_sample_long)
+data_sample_long_withpreds$pred_slope_quad = predict(mod_pain_slope_quad)
+
+#showing the difference with plots
+plot_quad_slope = ggplot(data_sample_long_withpreds, aes(y = pain, x = time, group = ID)) + geom_point(size = 3) + geom_line(color = "red", aes(y = pred_slope_quad, x = time)) + facet_wrap(~ID, ncol = 5)
+plot_quad_slope
+
+cAIC(mod_pain_slope)$caic
+cAIC(mod_pain_slope_quad)$caic
+
+anova(mod_pain_slope, mod_pain_slope_quad)
+
+###########################################################
+#                                                         #
+#                    Refit the model                      #
+#                                                         #
+###########################################################
+
+data_sample_long_centered_time = data_sample_long
+
+data_sample_long_centered_time$time_centered = data_sample_long_centered_time$time - mean(data_sample_long_centered_time$time) 
+
+mod_pain_slope_quad = lmer(pain ~ age + sex + STAI_trait + pain_cat + mindfulness + cortisol_serum + time_centered + I(time_centered^2) + (time_centered | ID), data = data_sample_long_centered_time)
+
+#marginal R squared
+r2beta(mod_pain_slope_quad, method = "nsj", data = data_sample_long_centered_time)
+#Effect   Rsq upper.CL lower.CL
+#1              Model 0.564    0.691    0.457
+#8      time_centered 0.458    0.595    0.314
+#7     cortisol_serum 0.102    0.249    0.013
+#9 I(time_centered^2) 0.095    0.241    0.011
+#5           pain_cat 0.025    0.133    0.000
+#2                age 0.017    0.114    0.000
+#4         STAI_trait 0.016    0.112    0.000
+#6        mindfulness 0.010    0.098    0.000
+#3            sexmale 0.003    0.075    0.000
+
+# Conditional AIC
+cAIC(mod_pain_slope_quad)$caic
+
+# Model coefficients
+summary(mod_pain_slope_quad)
+
+# Confidence intervals for the coefficients
+confint(mod_pain_slope_quad)
+#2.5 %      97.5 %
+#  .sig01              0.31821563  0.88167350
+#.sig02             -1.00000000 -0.59727553
+#.sig03              0.27871313  0.62738136
+#.sigma              0.39204696  0.59067105
+#(Intercept)         0.53374221  7.20844571
+#age                -0.06632338  0.01117478
+#sexmale            -0.51877418  0.28147069
+#STAI_trait         -0.10937306  0.01871693
+#pain_cat           -0.01251036  0.08037847
+#mindfulness        -0.33710986  0.09382237
+#cortisol_serum      0.14210335  0.63333427
+#time_centered      -0.96286100 -0.53107468
+#I(time_centered^2)  0.18666748  0.40211587
+
+# standardized Betas
+stdCoef.merMod(mod_pain_slope_quad)
+
+###########################################################
+#                                                         #
+#                    Model diagnostic                     #
+#                                                         #
+###########################################################
+
+
+require(lattice)
+#Normality 
+qqmath(mod_pain_slope_quad, id = 0.05)
+qqmath(ranef(mod_pain_slope_quad))
+
+#Linearity 
+plot(mod_pain_slope_quad, arg = "pearson")
+plot(resid ~ time_centered, data = data_sample_long_with_resid)
+plot(resid ~ age, data = data_sample_long_with_resid)
+plot(resid ~ sex, data = data_sample_long_with_resid)
+plot(resid ~ STAI_trait, data = data_sample_long_with_resid)
+plot(resid ~ pain_cat, data = data_sample_long_with_resid)
+plot(resid ~ cortisol_serum, data = data_sample_long_with_resid)
+plot(resid ~ mindfulness, data = data_sample_long_with_resid)
+
+#Homoscedasticity 
+plot(mod_pain_slope_quad, arg = "pearson")
+homosced_mod = lm(data_sample_long_with_resid$resid^2 ~ data_sample_long_with_resid$ID)
+summary(homosced_mod)
+
+# caluclate interquartile range within each cluster
+IQR_of_residuals_by_participant = sapply(split(data_sample_long_with_resid, f = data_sample_long_with_resid$ID), function(x) IQR(x$resid))
+# rank ordering them
+rank = rank(IQR_of_residuals_by_participant)
+# adding rank to the dataframe containing the residuals
+data_sample_long_with_resid$rank = rep(rank, each = length(repeated_variables))
+# creating a vector of participant IDs ordered based on the
+# rank, this will be used as labels
+IDforplot = unique(data_sample_long_with_resid$ID[order(data_sample_long_with_resid$rank)])
+# create the plot
+ggplot(data_sample_long_with_resid, aes(y = resid, x = factor(rank),labels = ID)) + geom_boxplot() + scale_x_discrete(labels = IDforplot) + coord_flip()
+
+#Multicollinearity 
+pairs.panels(data_sample_long_centered_time[, c("time_centered", "age", "sex", "STAI_trait", "pain_cat", "cortisol_serum", "mindfulness")], col = "red", lm = T)
+
+

@@ -1,0 +1,349 @@
+###########################################################
+#                                                         #
+#                 Creating a good data                    #
+#                                                         #
+###########################################################
+#clear workspace :
+graphics.off()
+rm(list=ls(all=TRUE))
+
+#load packages
+
+library(psych) # for describe
+library(ltm)
+library(dplyr) # for data management
+library(gsheet) # to read data from google sheets
+library(ggplot2) # for ggplot
+library(lm.beta)
+library(olsrr)
+library(lmtest)
+library(car)
+source("GraphPlots.R")
+
+#load data
+data_sample_1 = read.csv("https://raw.githubusercontent.com/kekecsz/PSYP13_Data_analysis_class-2018/master/home_sample_1.csv")
+
+# View data in the data viewer tool to check the dataset
+View(data_sample_1)
+# we see that subjet 28 have a problem with the age 
+
+# or display simple descriptive statistics and plots
+describe(data_sample_1) #I can see that the maximum age is "222" which is not normal but everything else looks fine
+summary(data_sample_1) #thanks to the summary function, I know that there is no missing data
+
+# use the table() function for categorical data
+table(data_sample_1$age) #with this function I can see that peaople are between 27 and 60 years old, except for one "222"
+table(data_sample_1$sex) #nothing special for the sex variable
+#we already check everythinf thanks to summary and describe function, so we don't need to create a table for each variables
+
+# before anything else, you should exclude or correct data that is not valid
+mydata_cleaned <-  data_sample_1 # create a copy of the data where which will be cleaned
+#There is too participants with a mindfulness score lower than one, which is not supposed to be possible so we need to remove them
+mydata_cleaned = mydata_cleaned[-which(mydata_cleaned[,"ID"] == "ID_112"),] #remove number 112 because of his score on mindfulness (<0)
+mydata_cleaned = mydata_cleaned[-which(mydata_cleaned[,"ID"] == "ID_146"),] #remove number 146 because of his score on mindfulness (<0)
+mydata_cleaned = mydata_cleaned[-which(mydata_cleaned[,"ID"] == "ID_28"),] #remove number 28 because his age
+mydata_cleaned = mydata_cleaned[-which(mydata_cleaned[,"ID"] == "ID_44"),] #remove number 44 because it's an outlier
+mydata_cleaned = mydata_cleaned[-which(mydata_cleaned[,"ID"] == "ID_90"),] #remove number 90 because it's an outlier
+
+
+View(mydata_cleaned)
+summary(mydata_cleaned)
+describe(mydata_cleaned)
+
+
+###########################################################
+#                                                         #
+#                 Hierarchical regression                 #
+#                                                         #
+###########################################################
+
+# Using hierarchical regression, you can quantify the amount of information gained by adding a new predictor or a set of predictors to a previous model. To do this, you will build two models, the predictors in one is the subset of the predictors in the other model.
+
+        ###########################################################
+        #                                                         #
+        #                       First model                       #
+        #                                                         #
+        ###########################################################
+
+# Here we first build a model to predict the pain after a chirurgie by using only age and sex as predictors.  
+mod_1 <- lm(pain ~ age + sex, data = mydata_cleaned)
+
+#First, we need to check the linerity of the relationship between the variables
+# scatterplot between pain and age
+plot(pain ~ age, data = mydata_cleaned)
+abline(lm(pain ~ age, data = mydata_cleaned))
+cor(mydata_cleaned$pain, mydata_cleaned$age)
+# -0.4042751
+
+#relationship pain and sex
+plot(pain ~ sex, data = mydata_cleaned)
+biserial.cor(mydata_cleaned$pain, mydata_cleaned$sex)
+#-0.04630791
+
+#Let's see the result of this model
+mod_1
+#Coefficients:
+#(Intercept)          age      sexmale  
+#9.3442      -0.1151       0.1970  
+
+summary(mod_1)
+#Residuals:
+#  Min      1Q  Median      3Q     Max 
+#-3.2611 -0.9067  0.0954  0.8841  3.2042 
+
+#Coefficients:
+#  Estimate Std. Error t value Pr(>|t|)    
+#(Intercept)   9.3442     0.8410  11.111  < 2e-16 ***
+#  age          -0.1151     0.0209  -5.507 1.52e-07 ***
+#  sexmale       0.1970     0.2133   0.923    0.357    
+#---
+#  Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+#Residual standard error: 1.32 on 152 degrees of freedom
+#Multiple R-squared:  0.1681,	Adjusted R-squared:  0.1572 
+#F-statistic: 15.36 on 2 and 152 DF,  p-value: 8.418e-07
+#the model is highly significant because P<0.05
+
+summary(mod_1)$adj.r.squared
+#0.1571588
+
+AIC(mod_1)
+#530.8515
+
+summary(mod_1)
+predict(mod_1)
+confint(mod_1) 
+#2.5 %      97.5 %
+#  (Intercept)  7.6826362 11.00570059
+#age         -0.1563987 -0.07380563
+#sexmale     -0.2244844  0.61844481
+
+lm.beta(mod_1)
+#(Intercept)         age     sexmale 
+#0.00000000 -0.40798156  0.06841196 
+
+
+
+        
+        ###########################################################
+        #                                                         #
+        #                       Second model                      #
+        #                                                         #
+        ###########################################################
+
+# Next, we want to see whether we can improve the effeffctiveness of our prediction by taking into account STAI, pain catastrophizing, mindfulness, and cortisol measures in our model, in addition to age and sex
+mod_2 = lm(pain ~ age + sex + STAI_trait + pain_cat + cortisol_serum + cortisol_saliva + mindfulness, data = mydata_cleaned)
+
+#First, we need to check the linerity of the relationship between the variables
+# between pain and STAI trait
+plot(pain ~ STAI_trait, data = mydata_cleaned)
+abline(lm(pain ~ STAI_trait, data = mydata_cleaned))
+cor(mydata_cleaned$pain, mydata_cleaned$STAI_trait)
+#0.227353
+
+# between pain and pain_cat
+plot(pain ~ pain_cat, data = mydata_cleaned)
+abline(lm(pain ~ pain_cat, data = mydata_cleaned))
+cor(mydata_cleaned$pain, mydata_cleaned$pain_cat)
+#0.4519197
+
+# between pain and cortisol_serum
+plot(pain ~ cortisol_serum, data = mydata_cleaned)
+abline(lm(pain ~ cortisol_serum, data = mydata_cleaned))
+cor(mydata_cleaned$pain, mydata_cleaned$cortisol_serum)
+#0.484165
+
+# between pain and cortisol_saliva
+plot(pain ~ cortisol_saliva, data = mydata_cleaned)
+abline(lm(pain ~ cortisol_saliva, data = mydata_cleaned))
+cor(mydata_cleaned$pain, mydata_cleaned$cortisol_saliva)
+#0.4663152
+
+# between pain and mindfulness
+plot(pain ~ mindfulness, data = mydata_cleaned)
+abline(lm(pain ~ mindfulness, data = mydata_cleaned))
+cor(mydata_cleaned$pain, mydata_cleaned$mindfulness)
+#-0.3769127
+
+#Let's see the result of this model
+mod_2
+#Coefficients:
+#(Intercept)              age          sexmale       STAI_trait         pain_cat   cortisol_serum  cortisol_saliva      mindfulness  
+#3.63380         -0.06922          0.27584         -0.02792          0.07704          0.32238            0.34639         -0.21946  
+
+
+summary2 = summary(mod_2)
+summary2
+#Residuals:
+#Min       1Q   Median       3Q      Max 
+#-3.03569 -0.74789  0.08244  0.67863  2.79600 
+
+#Coefficients:
+#  Estimate Std. Error t value Pr(>|t|)    
+#(Intercept)      3.63380    1.39754   2.600 0.010270 *  
+#  age             -0.06922    0.02052  -3.373 0.000952 ***
+#  sexmale          0.27584    0.17789   1.551 0.123150    
+#STAI_trait      -0.02792    0.02773  -1.007 0.315770    
+#pain_cat         0.07704    0.02575   2.992 0.003252 ** 
+#  cortisol_serum   0.32238    0.22884   1.409 0.161021    
+#cortisol_saliva  0.34639    0.22936   1.510 0.133117    
+#mindfulness     -0.21946    0.10978  -1.999 0.047440 *  
+#  ---
+#  Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+#Residual standard error: 1.09 on 147 degrees of freedom
+#Multiple R-squared:  0.4507,	Adjusted R-squared:  0.4246 
+#F-statistic: 17.23 on 7 and 147 DF,  p-value: < 2.2e-16
+#the model is highly significant because P<0.05
+
+summary(mod_2)$adj.r.squared
+#0.424588
+
+AIC(mod_2)
+#476.5048
+
+summary(mod_2)
+predict(mod_2)
+confint(mod_2) 
+#2.5 %       97.5 %
+#(Intercept)      0.87194175  6.395665389
+#age             -0.10978244 -0.028659354
+#sexmale         -0.07571867  0.627396011
+#STAI_trait      -0.08272573  0.026890885
+#pain_cat         0.02615384  0.127923930
+#cortisol_serum  -0.12986321  0.774619086
+#cortisol_saliva -0.10686770  0.799656398
+#mindfulness     -0.43641362 -0.002511252
+
+lm.beta(mod_2)
+#Standardized Coefficients::
+#  (Intercept)             age         sexmale      STAI_trait        pain_cat  cortisol_serum      cortisol_saliva     mindfulness 
+#0.00000000     -0.24535467      0.09579979     -0.08654665      0.25834229      0.19429570             0.21819186     -0.14386720 
+
+###########################################################
+#                                                         #
+#                     Comparison model                    #
+#                                                         #
+###########################################################
+
+
+# We can look at the adj. R squared statistic to see how much variance is explained by the new and the old model.
+summary(mod_1)$adj.r.squared
+#0.1571588
+summary(mod_2)$adj.r.squared
+#0.424588
+# It seems that the variance explained has increased substantially by adding information to the model.
+
+# Now, we should compare residual error and model fit thought the anova() function and the AIC() function.
+# The anova() function can only be used for comparing models if the two models are "nested", that is, predictors in one of the models are a subset of predictors of the other model.
+# If the anova F test is significant, it means that the models are significantly different in terms of their residual errors.
+
+anova(mod_1, mod_2)
+#Res.Df    RSS Df Sum of Sq      F    Pr(>F)    
+#1    152 264.75                                  
+#2    147 174.80  5    89.949 15.129 5.609e-12 ***
+#P < 0.05 so it's significant
+# F and Df 
+#so ther is a significant difference between the 2 models 
+
+# If the difference in AIC of the two models is larger than 2, the two models are significantly different in their model fit. 
+#Smaller AIC means less error and better model fit, so in this case we accept the model with the smaller AIC. However, if the difference in AIC does not reach 2, we can retain either of the two models. 
+#Ususally we stick with the less complicated model in this case, but theoretical considerations and previous results should also be considered when doing model selection.
+AIC(mod_1)
+#530.8515
+AIC(mod_2)
+#476.5048
+
+#Write up the regression equation of model 2 in the form of 𝑌 = 𝑏0 + 𝑏1 ∗ X1 + 𝑏2 ∗ X2+…+ bn * Xn,
+
+## Test for checking assumptions
+# normality assumption
+# QQ plot
+plot(mod_2, which = 2)
+# skew and kurtosis
+describe(residuals(mod_1))
+#n    missing   distinct       Info       Mean        Gmd        .05        .10        .25       .50        .75        .90        .95 
+#155          0        155          1 -5.909e-18      1.491   -2.15634   -1.72387   -0.90668  0.09538    0.88406    1.66740    2.26404 
+describe(residuals(mod_2))
+#n   missing  distinct      Info      Mean       Gmd       .05       .10       .25       .50       .75       .90       .95 
+#155         0       155         1 5.063e-17     1.201  -1.45783  -1.34183  -0.74789   0.08244     0.67863   1.20867   1.65179 
+
+shapiro.test(residuals(mod_1))
+#W = 0.99307, p-value = 0.6644
+shapiro.test(residuals(mod_2))
+#W = 0.99221, p-value = 0.5635
+
+# histogram
+hist(residuals(mod_1), breaks = 20)
+hist(residuals(mod_2), breaks = 20)
+
+#Test for linearity assumption
+plot(mod_1, which = 1)
+openGraph()
+plot(mod_2, which = 1)
+# ----> TUCKEY TEST
+
+#Test for homoscedasticty assumption (homogeneity of variance)
+plot(mod_2, which = 3)
+
+ncvTest(mod_1) #Wa want it to be not significant
+#Chisquare = 0.38622, Df = 1, p = 0.53429
+#P>0.05, not significant
+ncvTest(mod_2)
+#Chisquare = 0.02332327, Df = 1, p = 0.87862
+#P>0.05, not significant
+
+residualPlots(mod_1)
+#age           0.2475           0.8048
+#sex                                  
+#Tukey test    0.2707           0.7867
+
+
+residualPlots(mod_2)
+#                Test stat Pr(>|Test stat|)
+#age               -0.3258           0.7450
+#sex                                       
+#STAI_trait        -0.8320           0.4068
+#pain_cat           1.0051           0.3165
+#cortisol_serum    -0.0095           0.9924
+#cortisol_saliva   -0.1834           0.8547
+#mindfulness        1.0786           0.2825
+#Tukey test         0.6619           0.5080
+
+#Test for multicollinearity
+vif(mod_1)
+#    age     sex 
+#1.002944 1.002944 
+vif(mod_2)
+#   age             sex      STAI_trait        pain_cat    cortisol_serum   cortisol_saliva     mindfulness 
+#1.416474        1.021590        1.978372        1.995339        5.090979        5.585983        1.386094 
+#show that we don't need to calculate both cortisol_serum and cortisol_saliva because they are highly correlated and show the same thing
+
+
+###########################################################
+#                                                         #
+#                        Outliers                         #
+#                                                         #
+###########################################################
+#looking for outliers
+lev = hat(model.matrix(mod_1))
+plot(lev) 
+mydata_cleaned[lev > .05,]
+N= nrow(mydata_cleaned)
+mahad=(N-1)*(lev-1 / N)
+tail(sort(mahad),5)
+#[1]  6.121153  6.415627  7.286695 11.034925 13.958050
+order(mahad,decreasing=T)[c(5,4,3,2,1)] #2 variables we need to remove people > 9.21 for 0.01 P value 
+#[1]  25 143  84  28  44
+
+lev2 = hat(model.matrix(mod_2))
+plot(lev2) 
+mydata_cleaned[lev2 > .10,]
+N2 = nrow(mydata_cleaned)
+mahad2=(N2-1)*(lev2-1 / N2)
+tail(sort(mahad2),5)
+#[1] 16.31861 16.43339 16.62285 17.40741 26.73793
+order(mahad2,decreasing=T)[c(5,4,3,2,1)] #7 variables, we need to remove people > 18.48 for 0.01 P value
+#[1] 124  44  40  45  90
+
+#At the end, I decided to remove number 44 and 90
+

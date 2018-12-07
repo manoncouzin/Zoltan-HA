@@ -1,0 +1,173 @@
+###########################################################
+#                                                         #
+#                 Creating a good data                    #
+#                                                         #
+###########################################################
+#clear workspace :
+graphics.off()
+rm(list=ls(all=TRUE))
+
+#load packages
+
+library(psych) # for describe
+library(ltm)
+library(dplyr) # for data management
+library(gsheet) # to read data from google sheets
+library(ggplot2) # for ggplot
+library(lm.beta)
+library(olsrr)
+library(lmtest)
+library(car)
+source("GraphPlots.R")
+
+#load data 1
+data_sample_1 = read.csv("https://raw.githubusercontent.com/kekecsz/PSYP13_Data_analysis_class-2018/master/home_sample_1.csv")
+
+# View data in the data viewer tool to check the dataset
+View(data_sample_1)
+# we see that subjet 28 have a problem with the age 
+
+# or display simple descriptive statistics and plots
+describe(data_sample_1) #I can see that the maximum age is "222" which is not normal but everything else looks fine
+summary(data_sample_1) #thanks to the summary function, I know that there is no missing data
+
+# before anything else, you should exclude or correct data that is not valid
+mydata_cleaned <-  data_sample_1 # create a copy of the data where which will be cleaned
+
+#There is too participants with a mindfulness score lower than one, which is not supposed to be possible so we need to remove them
+mydata_cleaned = mydata_cleaned[-which(mydata_cleaned[,"ID"] == "ID_112"),] #remove number 112 because of his score on mindfulness (<0)
+mydata_cleaned = mydata_cleaned[-which(mydata_cleaned[,"ID"] == "ID_146"),] #remove number 146 because of his score on mindfulness (<0)
+mydata_cleaned = mydata_cleaned[-which(mydata_cleaned[,"ID"] == "ID_44"),] #remove number 44 because it's an outlier
+mydata_cleaned = mydata_cleaned[-which(mydata_cleaned[,"ID"] == "ID_90"),] #remove number 90 because it's an outlier
+mydata_cleaned = mydata_cleaned[-which(mydata_cleaned[,"ID"] == "ID_28"),] #remove number 28 because his age
+
+#creating models
+BM = lm(pain ~ age + sex + pain_cat + cortisol_serum + mindfulness, data = mydata_cleaned)
+IM = lm(pain ~ age + sex + STAI_trait + pain_cat + cortisol_serum + mindfulness + weight, data = mydata_cleaned)
+TBM = lm(pain ~ age + sex + STAI_trait + pain_cat + cortisol_serum + cortisol_saliva + mindfulness, data = mydata_cleaned)
+
+
+###########################################################
+#                                                         #
+#                 Analyse models                          #
+#                                                         #
+###########################################################
+
+backward_model = step(IM, direction = "backward")
+#Step:  AIC=33.31
+#pain ~ age + sex + pain_cat + cortisol_serum + mindfulness
+
+#Df Sum of Sq    RSS    AIC
+#<none>                        177.85 33.315
+#- sex             1     2.789 180.64 33.726
+#- mindfulness     1     5.450 183.30 35.993
+#- pain_cat        1     8.395 186.24 38.463
+#- age             1    25.334 203.18 51.956
+#- cortisol_serum  1    35.407 213.26 59.456
+#exclude from the list of predictors the predictors with the smallest amount of unique added explanatory value to the model
+#create a new model with only these predictors 
+#the final model with the reduced of predictors will have much better model fit indexes than the original compex model
+
+anova(BM, IM, TBM)
+#Res.Df    RSS Df Sum of Sq      F Pr(>F)
+#1    149 177.85                           
+#2    147 177.21  2   0.63637 0.2639 0.7684
+#3    147 174.80  0   2.41318   
+anova(BM, TBM)
+#Res.Df    RSS Df Sum of Sq      F Pr(>F)
+#1    149 177.85                           
+#2    147 174.80  2    3.0495 1.2823 0.2805
+
+anova(BM, IM)
+#Res.Df    RSS Df Sum of Sq      F Pr(>F)
+#1    149 177.85                           
+#2    147 177.21  2   0.63637 0.2639 0.7684
+
+
+summary(BM)
+#Coefficients:
+#  Estimate Std. Error t value Pr(>|t|)    
+#(Intercept)     4.08286    1.34081   3.045  0.00275 ** 
+#  age            -0.08308    0.01803  -4.607 8.70e-06 ***
+#  sexmale         0.27170    0.17775   1.529  0.12849    
+#pain_cat        0.05830    0.02199   2.652  0.00887 ** 
+#  cortisol_serum  0.58789    0.10794   5.446 2.07e-07 ***
+#  mindfulness    -0.23408    0.10955  -2.137  0.03425 *  
+#  ---
+#  Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+#Residual standard error: 1.093 on 149 degrees of freedom
+#Multiple R-squared:  0.4412,	Adjusted R-squared:  0.4224 
+#F-statistic: 23.52 on 5 and 149 DF,  p-value: < 2.2e-16
+
+summary(IM)
+#Residual standard error: 1.098 on 147 degrees of freedom
+#Multiple R-squared:  0.4432,	Adjusted R-squared:  0.4166 
+#F-statistic: 16.71 on 7 and 147 DF,  p-value: 4.127e-16
+
+
+lm.beta(BM)
+#Standardized Coefficients::
+#  (Intercept)            age        sexmale       pain_cat cortisol_serum    mindfulness 
+#0.0000000     -0.2944695      0.0943638      0.1955178      0.3543175     -0.1534518 
+confint(BM)
+#2.5 %      97.5 %
+#  (Intercept)     1.43340113  6.73231999
+#age            -0.11871067 -0.04744425
+#sexmale        -0.07952772  0.62293568
+#pain_cat        0.01486126  0.10174737
+#cortisol_serum  0.37459569  0.80118049
+#mindfulness    -0.45055814 -0.01760840
+
+
+summary(BM)$adj.r.squared
+#0.4224078
+summary(IM)$adj.r.squared
+#0.4166442
+summary(TBM)$adj.r.squared
+#0.424588
+
+
+AIC(BM, IM, TBM)
+#df      AIC
+#BM   7 475.1856
+#IM   9 478.6300
+#TBM  9 476.5048
+
+#all of the above model comparison methods indicate that the backward regression model performs almost the same as the 
+
+
+###########################################################
+#                                                         #
+#                 Doing predictions                       #
+#                                                         #
+###########################################################
+#load data 2
+data_sample_2 = read.csv("https://raw.githubusercontent.com/kekecsz/PSYP13_Data_analysis_class-2018/master/home_sample_2.csv")
+
+describe(data_sample_2) #there is some person with a mindfulness score under 1 #123 #113
+summary(data_sample_2) #no missing data
+
+mydata_cleaned2 <- data_sample_2
+mydata_cleaned2 = mydata_cleaned2[-which(mydata_cleaned2[,"ID"] == "ID_123"),] #remove number 123 because his score on mindfulness (<0)
+mydata_cleaned2 = mydata_cleaned2[-which(mydata_cleaned2[,"ID"] == "ID_113"),]#remove number 113 because his score on mindfulness (<0)
+
+
+#TESTING PERFORMANCE ON THE TEST SET 
+#calculate predicted values 
+pred_test <- predict(TBM, mydata_cleaned2)
+pred_test_back <- predict(BM, mydata_cleaned2)
+
+pred_test2 <- predict(IM, mydata_cleaned2)
+
+#now we calculate the sum of squared residuals 
+RSS_test = sum((mydata_cleaned2[,"pain"]- pred_test)^2)
+RSS_test2 = sum((mydata_cleaned2[,"pain"]- pred_test2)^2)
+RSS_test_back = sum((mydata_cleaned2[, "pain"] - pred_test_back)^2)
+RSS_test
+#241.1609
+RSS_test2
+#247.6494
+RSS_test_back
+#249.3541
+#higher means more error
+
